@@ -96,24 +96,51 @@ uint16_t adc_read(uint8_t ch)
 	return (ADC);
 }
 
+unsigned char SetBit(unsigned char x, unsigned char k, unsigned char b) {
+	return (b ? x | (0x01 << k) : x & ~(0x01 << k));
+}
+unsigned char GetBit(unsigned char x, unsigned char k) {
+	return ((x & (0x01 << k)) != 0);
+}
+
+
+void transmit_data(unsigned char data)
+{
+	//SER : C0
+	// RCLK : C1
+	// SRCLK : C2
+	// SRCLR : C3
+	char i;
+	for (i = 0; i < 8; ++i)
+	{
+		PORTC = 0x08;
+		PORTC = 0x08;
+		PORTC = 0x08 | (data & (0x01 << i));
+		PORTC = 0x04 | 0x08 | (data & (0x01 << i));
+	}
+	PORTC = 0x02;
+	PORTC = 0x00;
+}
+
 int main(void)
 {
     /* Replace with your application code */
 	DDRB = 0xFF; PORTB = 0x00;
 	DDRA = 0x03; PORTA = 0xFC;
 	DDRD = 0xFF; PORTD = 0x00;
+	DDRC = 0xFF; PORTC = 0x00;
 	adc_init();
 	uint16_t x, y;
 	LCD_init();
 	TimerSet(1000);
 	TimerOn();
 	char a[10];
-	
+ 
     while (1) 
     {
 		y = adc_read(2);
 		x = adc_read(3);
-		
+		transmit_data(0x0F);
 		if ((y > 1000) && ((x > 100) && (x < 900))) // up
 		{
 			PORTB = 0x01;
@@ -131,9 +158,11 @@ int main(void)
 			PORTB = 0x08;
 		}	
 		else
-			PORTB = 0x00;			
-		itoa(x, a, 10);
-		LCD_DisplayString(1, a);
+		{
+			PORTB = 0x00;
+		}
+		//itoa(x, a, 10);
+		//LCD_DisplayString(1, a);
 		while(!TimerFlag){}
 		TimerFlag = 0;
     }
