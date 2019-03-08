@@ -1,13 +1,13 @@
 /*
- * final_project.c
+ * finalProject_output.c
  *
- * Created: 2/27/2019 12:42:48 AM
+ * Created: 3/7/2019 4:58:12 PM
  * Author : thanp
  */ 
 
 #include <avr/io.h>
 #include <stdio.h>
-#include "io.c"
+//#include "io.c"
 #include <avr/interrupt.h>
 #include "usart_ATmega1284.h"
 
@@ -98,10 +98,10 @@ uint16_t adc_read(uint8_t ch)
 }
 
 // global variable
-unsigned char up, down, left, right;
-unsigned char sendInput; //b000 'start' 'up' 'down' 'right' 'left'
+unsigned char receiveInput;
+unsigned char light;
 
-void transmit_data(unsigned char data)
+void transmit_data_light(unsigned char data)
 {
 	//SER : C0
 	// RCLK : C1
@@ -111,103 +111,111 @@ void transmit_data(unsigned char data)
 	
 	for (i = 0; i < 8; ++i)
 	{
-		PORTC = 0x08; // srclr high and rclk low
-		PORTC |= ((data >> i ) & 0x01 );
-		PORTC |= 0x04;
+		PORTB = 0x08; // srclr high and rclk low
+		PORTB |= ((data >> i ) & 0x01 );
+		PORTB |= 0x04;
 	}
-	PORTC |= 0x02;
+	PORTB |= 0x02;
 	
-	PORTC = 0x00;
+	PORTB = 0x00;
 }
 
-enum Stick_States {S_Start, S_Run} S_state;
-
-void s_tick()
+enum Player_States {P_start, P_stay, P_right, P_left} Player_state;
+	
+void player_tick()
 {
-		uint16_t x, y;
-		y = adc_read(2);
-		x = adc_read(3);
-		
-		switch(S_state)
-		{
-			case S_Start:
-				S_state = S_Run;
-				break;
-			case S_Run:
-				S_state = S_Run;
-				break;
-			default:
-				break;
-		}
-		
-		switch(S_state)
-		{
-			case S_Start:
-				break;
-			case S_Run:
-				if (~PINA & 0x10)
-				{
-					sendInput = sendInput | 0x10;
-				}
-				else
-				{
-					sendInput = sendInput & 0xEF;
-				}
-				if ((y > 1000) && ((x > 100) && (x < 900))) // up
-				{
-					sendInput = sendInput & 0xF0;
-					sendInput = sendInput | 0x08;
-				}
-				else if ((y < 50) && ((x > 100) && (x < 900))) // down
-				{
-					sendInput = sendInput & 0xF0;
-					sendInput = sendInput | 0x04;
-				}
-				else if ((x > 1000) && ((y > 100) && (y < 900))) // right
-				{
-					sendInput = sendInput & 0xF0;
-					sendInput = sendInput | 0x02;
-				}
-				else if ((x < 50) && ((y > 100) && (y < 900))) // left
-				{
-					sendInput = sendInput & 0xF0;
-					sendInput = sendInput | 0x01;
-				}
-				else
-				{
-					sendInput = sendInput & 0xF0;
-				}
-				break;
-			default:
-				break;
-		}
-		if (USART_IsSendReady(0))
-		{
-			USART_Send(sendInput, 0);
-		}
-		
+	unsigned char stickInput = receiveInput & 0x0F;
+	switch (Player_state)
+	{
+		case P_start:
+			light = 0x00;
+			if (stickInput == 0x00)
+				Player_state = P_start;
+			else if (stickInput == 0x08)
+				Player_state = P_right;
+			else
+				Player_state = P_start;
+			break;
+		case P_right:
+			if (stickInput == 0x08)
+				Player_state = P_right;
+			else if (stickInput == 0x04)
+				Player_state = P_left;
+			else
+				Player_state = P_stay;
+			break;
+		case P_left:
+			if (stickInput == 0x08)
+				Player_state = P_right;
+			else if (stickInput == 0x04)
+				Player_state = P_left;
+			else
+				Player_state = P_stay;
+			break;		
+		case P_stay:
+			if (stickInput == 0x08)
+				Player_state = P_right;
+			else if (stickInput == 0x04)
+				Player_state = P_left;
+			else
+				Player_state = P_stay;
+			break;			
+		default:
+			break;
+	}
+	switch(Player_state)
+	{
+		case P_start:
+			transmit_data_light(light);
+			break;
+		case P_right:
+			if (light == 0x00)
+				light = 0x01;
+			else if (light == 0x80)
+				light = 0x80;
+			else
+				light = light << 1;
+			transmit_data_light(light);
+			break;
+		case P_left:
+			if (light == 0x01)
+				light = 0x01;
+			else 
+				light = light >> 1;
+			transmit_data_light(light);
+			break;
+		case P_stay:
+			transmit_data_light(light);
+			break;
+		default:
+			break;
+	}
 }
-
-
 
 int main(void)
 {
-    /* Replace with your application code*/
-	DDRA = 0x03; PORTA = 0xFC;
-	sendInput = 0x00;
-	TimerSet(100);
+	DDRB = 0xFF; PORTB = 0x00;
+    unsigned long player_elTime = 300;
+	unsigned period = 100;
+	TimerSet(period);
 	TimerOn();
-	adc_init();
 	initUSART(0);
-	S_state = S_Start;
-	
+	//transmit_data_light(0xFF);
     while (1) 
     {
-		s_tick();
-		while(!TimerFlag){}
+		if (USART_HasReceived(0))
+		{
+			receiveInput = USART_Receive(0);
+			USART_Flush(0);
+		}
+		if (player_elTime >= 500)
+		{
+			player_tick();
+			player_elTime = 0;
+		}
+		while(!TimerFlag);
 		TimerFlag = 0;
+		player_elTime += period;
     }
 }
-
-
 

@@ -1,3 +1,4 @@
+
 /*
  * final_project.c
  *
@@ -7,7 +8,7 @@
 
 #include <avr/io.h>
 #include <stdio.h>
-#include "io.c"
+//#include "io.c"
 #include <avr/interrupt.h>
 #include "usart_ATmega1284.h"
 
@@ -99,8 +100,72 @@ uint16_t adc_read(uint8_t ch)
 
 // global variable
 unsigned char up, down, left, right;
-unsigned char sendInput; //b000 'start' 'up' 'down' 'right' 'left'
 
+
+void stick()
+{
+		adc_init();
+		uint16_t x, y;
+		y = adc_read(2);
+		x = adc_read(3);
+		if ((y > 1000) && ((x > 100) && (x < 900))) // up
+		{
+			PORTB = 0x01;
+			up = 1;
+			down = left = right = 0;
+		}
+		else if ((y < 50) && ((x > 100) && (x < 900))) // down
+		{
+			PORTB = 0x02;
+			down = 1;
+			up = left = right = 0;
+		}
+		else if ((x > 1000) && ((y > 100) && (y < 900))) // right
+		{
+			PORTB = 0x04;
+			right = 1;
+			up = down = left = 0;
+		}
+		else if ((x < 50) && ((y > 100) && (y < 900))) // left
+		{
+			PORTB = 0x08;
+			left = 0;
+			up = down = right = 0;
+		}
+		else
+		{
+			PORTB = 0x00;
+			up = down = left = right = 0;
+		}
+}
+
+
+unsigned char SetBit(unsigned char x, unsigned char k, unsigned char b) {
+	return (b ? x | (0x01 << k) : x & ~(0x01 << k));
+}
+unsigned char GetBit(unsigned char x, unsigned char k) {
+	return ((x & (0x01 << k)) != 0);
+}
+
+enum PlayerLight_States {PL_Start, PL_Move} PL_state;
+
+void PL_Tick()
+{
+	switch (PL_state)
+	{
+		case PL_Start:
+			if (!up)
+			{
+				PL_state = PL_Start;
+			}
+			if (up)
+			{
+				PL_state = PL_Move;
+			}
+			break;
+			
+	}
+}
 void transmit_data(unsigned char data)
 {
 	//SER : C0
@@ -120,94 +185,40 @@ void transmit_data(unsigned char data)
 	PORTC = 0x00;
 }
 
-enum Stick_States {S_Start, S_Run} S_state;
-
-void s_tick()
-{
-		uint16_t x, y;
-		y = adc_read(2);
-		x = adc_read(3);
-		
-		switch(S_state)
-		{
-			case S_Start:
-				S_state = S_Run;
-				break;
-			case S_Run:
-				S_state = S_Run;
-				break;
-			default:
-				break;
-		}
-		
-		switch(S_state)
-		{
-			case S_Start:
-				break;
-			case S_Run:
-				if (~PINA & 0x10)
-				{
-					sendInput = sendInput | 0x10;
-				}
-				else
-				{
-					sendInput = sendInput & 0xEF;
-				}
-				if ((y > 1000) && ((x > 100) && (x < 900))) // up
-				{
-					sendInput = sendInput & 0xF0;
-					sendInput = sendInput | 0x08;
-				}
-				else if ((y < 50) && ((x > 100) && (x < 900))) // down
-				{
-					sendInput = sendInput & 0xF0;
-					sendInput = sendInput | 0x04;
-				}
-				else if ((x > 1000) && ((y > 100) && (y < 900))) // right
-				{
-					sendInput = sendInput & 0xF0;
-					sendInput = sendInput | 0x02;
-				}
-				else if ((x < 50) && ((y > 100) && (y < 900))) // left
-				{
-					sendInput = sendInput & 0xF0;
-					sendInput = sendInput | 0x01;
-				}
-				else
-				{
-					sendInput = sendInput & 0xF0;
-				}
-				break;
-			default:
-				break;
-		}
-		if (USART_IsSendReady(0))
-		{
-			USART_Send(sendInput, 0);
-		}
-		
-}
-
-
-
 int main(void)
 {
     /* Replace with your application code*/
-	DDRA = 0x03; PORTA = 0xFC;
-	sendInput = 0x00;
-	TimerSet(100);
+	DDRA = 0xFF; PORTA = 0x00;
+	DDRD = 0x01; PORTD = 0xFE;
+	DDRC = 0xFF; PORTC = 0x00;
+
+	//LCD_init();
+	TimerSet(500);
 	TimerOn();
-	adc_init();
 	initUSART(0);
-	S_state = S_Start;
-	
     while (1) 
     {
-		s_tick();
+		//transmit_data(0x12);
+		if (USART_IsSendReady(0))
+		{
+			//PORTA = 0x02;
+			USART_Send(0x01, 0);
+		}
+		if (USART_HasTransmitted(0))
+		{
+			PORTA = 0x04;
+		}
+		if (USART_HasReceived(0))
+		{
+			PORTA = 0x01;
+			PORTA = USART_Receive(0);
+			USART_Flush(0);
+		}
 		while(!TimerFlag){}
 		TimerFlag = 0;
     }
 }
+
 
 
 
